@@ -1,5 +1,8 @@
 package com.example.fuel_bol_mobile
 
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -10,6 +13,8 @@ import android.view.View
 import android.widget.PopupWindow
 import android.widget.TableLayout
 import android.widget.TextView
+import android.widget.TableRow
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
@@ -17,7 +22,6 @@ import com.example.fuel_bol_mobile.network.RetrofitClient
 import com.mapbox.geojson.Point
 import com.mapbox.maps.MapView
 import com.mapbox.maps.CameraOptions
-import com.mapbox.maps.Style
 import com.mapbox.maps.plugin.annotation.annotations
 import com.mapbox.maps.plugin.annotation.generated.PointAnnotation
 import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
@@ -27,6 +31,11 @@ import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
+import java.text.NumberFormat
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.toString
 
 
 class MainActivity : AppCompatActivity() {
@@ -49,7 +58,7 @@ class MainActivity : AppCompatActivity() {
         mapView = findViewById(R.id.mapView)
 
         // Load Mapbox map and fetch GeoJSON
-        mapView.getMapboxMap().loadStyleUri(Style.MAPBOX_STREETS) { style ->
+        mapView.getMapboxMap().loadStyleUri("mapbox://styles/mapbox/light-v10") { style ->
 
             val redMarker = (ContextCompat.getDrawable(this, R.drawable.fuel_station_red)?.toBitmap())
                 ?: throw RuntimeException("Could not load marker image")
@@ -90,6 +99,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun fetchGeoJsonData() {
         RetrofitClient.instance.getGeoJson().enqueue(object : Callback<GeoJsonResponse> {
+            @RequiresApi(Build.VERSION_CODES.O)
             override fun onResponse(call: Call<GeoJsonResponse>, response: Response<GeoJsonResponse>) {
                 if (response.isSuccessful && response.body() != null) {
                     val geoJsonResponse = response.body()
@@ -119,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         runCatching { toBigDecimal() }.getOrNull()
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun addMarker(point: Point, fuelStationName: Any?, fuelLevel: Any?, monitoringAt: Any?) {
         val annotationApi = mapView.annotations
         pointAnnotationManager = annotationApi.createPointAnnotationManager()
@@ -145,24 +156,66 @@ class MainActivity : AppCompatActivity() {
 
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun markerClickListener(marker: PointAnnotation, fuelStationName: Any?, fuelLevel: Any?, monitoringAt: Any?) {
         pointAnnotationManager.addClickListener { clickedMarker ->
             if (clickedMarker == marker) {
-                showTooltip(mapView, fuelStationName.toString(), fuelLevel.toString(), monitoringAt.toString())
+                showTooltip(
+                    mapView,
+                    fuelStationName.toString(),
+                    fuelLevel.toString(),
+                    monitoringAt.toString()
+                )
             }
             true
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun dateTimeFormatter(dateStr: String): String {
+        val dateTime = LocalDateTime.parse(dateStr)
+        val formatter = DateTimeFormatter.ofPattern("MMMM d, yyyy 'at' h:mm a")
+        val formattedDate = dateTime.format(formatter)
+        return formattedDate
+    }
+
+    fun formatDecimalWithDots(numberStr: String): String {
+        val number = numberStr.toDouble()
+        return NumberFormat.getNumberInstance(Locale.GERMAN).format(number)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun showTooltip(anchorView: View, fuelStationName: String, fuelLevel: String, monitoringAt: String) {
 
         popupWindow?.dismiss()
 
+        val fuelLevelValue: Number? = fuelLevel.toNumber()
+        System.out.println(" fuelLevelValue: " + fuelLevelValue)
+        val fuelStationColor = when {
+            fuelLevelValue == null -> Color.RED
+            (fuelLevelValue.toDouble() >= 15000) -> Color.GREEN
+            (fuelLevelValue.toDouble() >= 5000) -> Color.parseColor("#FF8C00")
+            else -> Color.RED
+        }
+
         val popupView = LayoutInflater.from(this).inflate(R.layout.tooltip_table, null)
+        val tableLayout = popupView.findViewById<TableLayout>(R.id.tooltip_table)
+
+        val popupBorder = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(Color.WHITE)
+            setStroke(
+                10,
+                fuelStationColor
+            )
+            cornerRadius = 8f
+        }
+        popupView.background = popupBorder
+        setTableTextColor(tableLayout, fuelStationColor)
 
         popupView.findViewById<TextView>(R.id.value1).text = fuelStationName
-        popupView.findViewById<TextView>(R.id.value2).text = fuelLevel + " [L] (Approx)"
-        popupView.findViewById<TextView>(R.id.value3).text = monitoringAt
+        popupView.findViewById<TextView>(R.id.value2).text = formatDecimalWithDots(fuelLevel) + " [L] (Approx)"
+        popupView.findViewById<TextView>(R.id.value3).text = dateTimeFormatter(monitoringAt)
 
         popupWindow = PopupWindow(
             popupView,
@@ -179,6 +232,20 @@ class MainActivity : AppCompatActivity() {
                 0,
                 150
             )
+        }
+    }
+
+    fun setTableTextColor(tableLayout: TableLayout, textColor: Int) {
+        for (i in 0 until tableLayout.childCount) {
+            val child = tableLayout.getChildAt(i)
+            if (child is TableRow) {
+                for (j in 0 until child.childCount) {
+                    val cell = child.getChildAt(j)
+                    if (cell is TextView) {
+                        cell.setTextColor(textColor)
+                    }
+                }
+            }
         }
     }
 
