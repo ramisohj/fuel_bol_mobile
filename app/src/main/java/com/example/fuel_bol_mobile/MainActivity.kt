@@ -12,8 +12,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.widget.PopupWindow
 import android.widget.TableLayout
-import android.widget.TextView
 import android.widget.TableRow
+import android.widget.TextView
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -27,7 +27,7 @@ import com.mapbox.maps.plugin.annotation.generated.PointAnnotation
 import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
 import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
-
+import com.mapbox.maps.plugin.gestures.addOnMapClickListener
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -35,14 +35,16 @@ import java.text.NumberFormat
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.toString
 
 
 class MainActivity : AppCompatActivity() {
     private lateinit var mapView: MapView
     private lateinit var pointAnnotationManager: PointAnnotationManager
+    private val pointAnnotations = mutableListOf<PointAnnotation>()
+    private val annotationDataMap = mutableMapOf<PointAnnotation, AnnotationData>()
     private var popupWindow: PopupWindow? = null
     private val handler = Handler(Looper.getMainLooper())
+    private var isTooltipVisible = false // Flag to track tooltip visibility
 
     private val runnable = object : Runnable {
         override fun run() {
@@ -51,38 +53,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_map)
 
         mapView = findViewById(R.id.mapView)
 
-        // Load Mapbox map and fetch GeoJSON
         mapView.getMapboxMap().loadStyleUri("mapbox://styles/mapbox/light-v10") { style ->
 
-            val redMarker = (ContextCompat.getDrawable(this, R.drawable.fuel_station_red)?.toBitmap())
-                ?: throw RuntimeException("Could not load marker image")
+            val redMarker = ContextCompat.getDrawable(this, R.drawable.fuel_station_red)?.toBitmap()
+            val orangeMarker = ContextCompat.getDrawable(this, R.drawable.fuel_station_orange)?.toBitmap()
+            val greenMarker = ContextCompat.getDrawable(this, R.drawable.fuel_station_green)?.toBitmap()
+            val blackMarker = ContextCompat.getDrawable(this, R.drawable.fuel_station_black)?.toBitmap()
 
-            val orangeMarker = (ContextCompat.getDrawable(this, R.drawable.fuel_station_orange)?.toBitmap())
-                ?: throw RuntimeException("Could not load marker image")
+            style.addImage("red-marker", redMarker!!)
+            style.addImage("orange-marker", orangeMarker!!)
+            style.addImage("green-marker", greenMarker!!)
+            style.addImage("black-marker", blackMarker!!)
 
-            val greenMarker = (ContextCompat.getDrawable(this, R.drawable.fuel_station_green)?.toBitmap())
-                ?: throw RuntimeException("Could not load marker image")
-
-            mapView.getMapboxMap().getStyle { style ->
-                style.addImage("red-marker", redMarker)
-            }
-
-            mapView.getMapboxMap().getStyle { style ->
-                style.addImage("orange-marker", orangeMarker)
-            }
-
-            mapView.getMapboxMap().getStyle { style ->
-                style.addImage("green-marker", greenMarker)
-            }
             centerMap(-66.15689955340157, -17.39228242512834, 12.0)
 
             pointAnnotationManager = mapView.annotations.createPointAnnotationManager()
+            addAnnotationClickListener()
+
+            mapView.getMapboxMap().addOnMapClickListener { point ->
+                resetAllAnnotationsOpacity(1.0)
+                popupWindow?.dismiss()
+                isTooltipVisible = false
+                true
+            }
+
             fetchGeoJsonData()
         }
         handler.post(runnable)
@@ -103,8 +104,6 @@ class MainActivity : AppCompatActivity() {
             override fun onResponse(call: Call<GeoJsonResponse>, response: Response<GeoJsonResponse>) {
                 if (response.isSuccessful && response.body() != null) {
                     val geoJsonResponse = response.body()
-                    Log.d("GeoJSON", "Data: $geoJsonResponse")
-
                     geoJsonResponse?.features?.forEach { feature ->
                         val coordinates = feature.geometry.coordinates
                         if (coordinates.size == 2) {
@@ -131,8 +130,6 @@ class MainActivity : AppCompatActivity() {
 
     @RequiresApi(Build.VERSION_CODES.O)
     private fun addMarker(point: Point, fuelStationName: Any?, fuelLevel: Any?, monitoringAt: Any?) {
-        val annotationApi = mapView.annotations
-        pointAnnotationManager = annotationApi.createPointAnnotationManager()
 
         val fuelLevelValue: Number? = fuelLevel.toString().toNumber()
 
@@ -147,26 +144,42 @@ class MainActivity : AppCompatActivity() {
             .withPoint(point)
             .withIconImage(iconName)
             .withIconSize(0.1)
+            .withIconOpacity(1.0)
 
         val annotation = pointAnnotationManager.create(pointAnnotationOptions)
 
-        annotation.let { marker ->
-            markerClickListener(marker, fuelStationName, fuelLevelValue?.toInt(), monitoringAt)
-        }
+        annotationDataMap[annotation] = AnnotationData(
+            fuelStationName = fuelStationName.toString(),
+            fuelLevel = fuelLevel.toString(),
+            monitoringAt = monitoringAt.toString()
+        )
 
+        pointAnnotations.add(annotation)
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    private fun markerClickListener(marker: PointAnnotation, fuelStationName: Any?, fuelLevel: Any?, monitoringAt: Any?) {
-        pointAnnotationManager.addClickListener { clickedMarker ->
-            if (clickedMarker == marker) {
-                showTooltip(
-                    mapView,
-                    fuelStationName.toString(),
-                    fuelLevel.toString(),
-                    monitoringAt.toString()
-                )
+    private fun addAnnotationClickListener() {
+
+        pointAnnotationManager.addClickListener { clicked ->
+            resetAllAnnotationsOpacity(0.1)
+            pointAnnotations.forEach { annotation ->
+                if (clicked == annotation) {
+                    annotation.iconOpacity = 1.0
+                    pointAnnotationManager.update(annotation)
+
+                    val annotationData = annotationDataMap[annotation]
+                    annotationData?.let {
+                        showTooltip(
+                            mapView,
+                            it.fuelStationName,
+                            it.fuelLevel,
+                            it.monitoringAt
+                        )
+                    }
+                    isTooltipVisible = true
+                }
             }
+
             true
         }
     }
@@ -184,13 +197,18 @@ class MainActivity : AppCompatActivity() {
         return NumberFormat.getNumberInstance(Locale.GERMAN).format(number)
     }
 
+    private fun resetAllAnnotationsOpacity(opacity: Double) {
+        pointAnnotations.forEach { annotation ->
+            annotation.iconOpacity = opacity
+            pointAnnotationManager.update(annotation)
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.O)
     private fun showTooltip(anchorView: View, fuelStationName: String, fuelLevel: String, monitoringAt: String) {
-
         popupWindow?.dismiss()
 
-        val fuelLevelValue: Number? = fuelLevel.toNumber()
-        System.out.println(" fuelLevelValue: " + fuelLevelValue)
+        val fuelLevelValue: Number? = fuelLevel.toString().toNumber()
         val fuelStationColor = when {
             fuelLevelValue == null -> Color.RED
             (fuelLevelValue.toDouble() >= 15000) -> Color.GREEN
@@ -204,17 +222,14 @@ class MainActivity : AppCompatActivity() {
         val popupBorder = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             setColor(Color.WHITE)
-            setStroke(
-                10,
-                fuelStationColor
-            )
+            setStroke(10, fuelStationColor)
             cornerRadius = 8f
         }
         popupView.background = popupBorder
         setTableTextColor(tableLayout, fuelStationColor)
 
         popupView.findViewById<TextView>(R.id.value1).text = fuelStationName
-        popupView.findViewById<TextView>(R.id.value2).text = formatDecimalWithDots(fuelLevel) + " [L] (Approx)"
+        popupView.findViewById<TextView>(R.id.value2).text = formatDecimalWithDots(fuelLevel) + " [Liters] (Approx.)"
         popupView.findViewById<TextView>(R.id.value3).text = dateTimeFormatter(monitoringAt)
 
         popupWindow = PopupWindow(
@@ -254,3 +269,9 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacks(runnable)
     }
 }
+
+data class AnnotationData(
+    val fuelStationName: String,
+    val fuelLevel: String,
+    val monitoringAt: String
+)
