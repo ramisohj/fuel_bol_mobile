@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
     private val annotationDataMap = mutableMapOf<PointAnnotation, AnnotationData>()
     private var popupWindow: PopupWindow? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var isTooltipVisible = false // Flag to track tooltip visibility
+    private var isTooltipVisible = false
 
     private val runnable = object : Runnable {
         override fun run() {
@@ -230,7 +230,7 @@ class MainActivity : AppCompatActivity() {
 
         popupView.findViewById<TextView>(R.id.value1).text = fuelStationName
         popupView.findViewById<TextView>(R.id.value2).text = formatDecimalWithDots(fuelLevel) + " [Liters] (Approx.)"
-        popupView.findViewById<TextView>(R.id.value3).text = dateTimeFormatter(monitoringAt)
+        popupView.findViewById<TextView>(R.id.value3).text = "Last update: " + dateTimeFormatter(monitoringAt)
 
         popupWindow = PopupWindow(
             popupView,
