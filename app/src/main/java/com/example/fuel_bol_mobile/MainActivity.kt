@@ -46,12 +46,6 @@ class MainActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var isTooltipVisible = false
 
-    private val runnable = object : Runnable {
-        override fun run() {
-            fetchGeoJsonData()
-            handler.postDelayed(this, 5 * 60 * 1000) // runs every 5 minutes
-        }
-    }
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,10 +77,30 @@ class MainActivity : AppCompatActivity() {
                 isTooltipVisible = false
                 true
             }
-
             fetchGeoJsonData()
+            scheduleNextUpdate() // Start precise scheduling here
         }
-        handler.post(runnable)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun scheduleNextUpdate() {
+        val now = System.currentTimeMillis()
+        val next10Min = (now / (10 * 60 * 1000) + 1) * (10 * 60 * 1000)
+        val delay = next10Min - now
+
+        handler.postDelayed({
+            fetchGeoJsonData()
+            scheduleRepeatingUpdates()
+        }, delay)
+    }
+
+    private fun scheduleRepeatingUpdates() {
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                fetchGeoJsonData()
+                handler.postDelayed(this, 10 * 60 * 1000) // Every 10 minutes
+            }
+        }, 10 * 60 * 1000)
     }
 
     private fun centerMap(longitude: Double, latitude: Double, zoom: Double) {
@@ -103,6 +117,11 @@ class MainActivity : AppCompatActivity() {
             @RequiresApi(Build.VERSION_CODES.O)
             override fun onResponse(call: Call<GeoJsonResponse>, response: Response<GeoJsonResponse>) {
                 if (response.isSuccessful && response.body() != null) {
+                    // Remove old markers
+                    pointAnnotationManager.deleteAll()
+                    pointAnnotations.clear()
+                    annotationDataMap.clear()
+
                     val geoJsonResponse = response.body()
                     geoJsonResponse?.features?.forEach { feature ->
                         val coordinates = feature.geometry.coordinates
@@ -266,7 +285,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        handler.removeCallbacks(runnable)
     }
 }
 
