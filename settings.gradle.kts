@@ -29,6 +29,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "fuel_bol_mobile"
+rootProject.name = "fuel_bol"
 include(":app")
  

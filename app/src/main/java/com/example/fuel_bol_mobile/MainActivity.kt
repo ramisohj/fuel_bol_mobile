@@ -1,7 +1,9 @@
 package com.example.fuel_bol_mobile
 
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.Manifest
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -16,6 +18,7 @@ import android.widget.TableRow
 import android.widget.TextView
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.example.fuel_bol_mobile.network.RetrofitClient
@@ -28,6 +31,8 @@ import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
 import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
 import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
 import com.mapbox.maps.plugin.gestures.addOnMapClickListener
+import com.mapbox.maps.plugin.locationcomponent.OnIndicatorPositionChangedListener
+import com.mapbox.maps.plugin.locationcomponent.location
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -45,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private var popupWindow: PopupWindow? = null
     private val handler = Handler(Looper.getMainLooper())
     private var isTooltipVisible = false
+    private val PERMISSION_REQUEST_CODE = 101
 
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -66,8 +72,6 @@ class MainActivity : AppCompatActivity() {
             style.addImage("green-marker", greenMarker!!)
             style.addImage("black-marker", blackMarker!!)
 
-            centerMap(-66.15689955340157, -17.39228242512834, 12.0)
-
             pointAnnotationManager = mapView.annotations.createPointAnnotationManager()
             addAnnotationClickListener()
 
@@ -80,6 +84,7 @@ class MainActivity : AppCompatActivity() {
             fetchGeoJsonData()
             scheduleNextUpdate() // Start precise scheduling here
         }
+        requestLocationPermission()
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -286,6 +291,47 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
     }
+
+    private fun requestLocationPermission() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+
+            ActivityCompat.requestPermissions(this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+                PERMISSION_REQUEST_CODE
+            )
+        } else {
+            enableUserLocation()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            enableUserLocation()
+        }
+    }
+
+    private fun enableUserLocation() {
+        val locationComponentPlugin = mapView.location
+
+        locationComponentPlugin.updateSettings {
+            enabled = true
+            pulsingEnabled = true
+            pulsingMaxRadius = 100f
+            layerBelow = null
+        }
+
+        val listener = object : OnIndicatorPositionChangedListener {
+            override fun onIndicatorPositionChanged(point: Point) {
+                centerMap(point.longitude(), point.latitude(), 12.0)
+                locationComponentPlugin.removeOnIndicatorPositionChangedListener(this)
+            }
+        }
+
+        locationComponentPlugin.addOnIndicatorPositionChangedListener(listener)
+    }
+
 }
 
 data class AnnotationData(

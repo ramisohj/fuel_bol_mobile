@@ -9,7 +9,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.fuel_bol_mobile"
+        applicationId = "com.example.fuel_bol"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
@@ -60,6 +60,7 @@ dependencies {
 
     // Mapbox
     implementation("com.mapbox.maps:android:11.11.0")
+    implementation("com.mapbox.plugin:maps-locationcomponent:11.11.0")
 
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
